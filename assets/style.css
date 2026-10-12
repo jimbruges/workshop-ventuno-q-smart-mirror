@@ -1,0 +1,151 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #000;
+  color: #fff;
+}
+
+#mirror {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror the image, like a real mirror */
+}
+
+#panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(380px, 100%);
+  padding: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 24px;
+}
+
+h2 {
+  font-size: 16px;
+  margin: 32px 0 8px;
+  color: #00979d;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+select,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+  padding: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+}
+
+#answer {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Live classification results */
+#detected {
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+#detected li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#detected .is-trigger {
+  background: #00979d;
+}
+
+#detected .empty {
+  background: none;
+  opacity: 0.4;
+}
+
+/* Fills up while the trigger class is held in front of the camera */
+#trigger {
+  margin-bottom: 8px;
+}
+
+#hold {
+  height: 4px;
+  margin-bottom: 20px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#holdBar {
+  width: 0;
+  height: 100%;
+  background: #00979d;
+  transition: width 0.1s linear;
+}
+
+/* Shown only while the vision model is generating */
+#spinner {
+  display: none;
+  width: 22px;
+  height: 22px;
+  margin-bottom: 12px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #00979d;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+body.thinking #spinner {
+  display: block;
+}
+
+body.thinking #hold {
+  opacity: 0;
+}
+
+body.thinking #status {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+body.thinking #mirror {
+  filter: brightness(0.5);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}

@@ -1,0 +1,10 @@
+name: AI Smart Mirror
+description: An image classification model triggers a smart mirror that describes what it sees
+ports: []
+bricks:
+- arduino:video_image_classification:
+    model: person-classification
+- arduino:vlm:
+    model: genie:qwen3_vl_4b_instruct
+- arduino:web_ui: {}
+icon: 🪞
