@@ -19,10 +19,6 @@ from arduino.app_utils.image import compressed_to_jpeg
 
 logger = Logger("AISmartMirror")
 
-# The classes your model can report. They fill the dropdown in the web UI, so
-# replace this list when you point app.yaml at your own Edge Impulse model.
-TRIGGER_CLASSES = ["person", "not-person"]
-
 CONFIDENCE = 0.5  # a class counts as detected above this score
 HOLD_SEC = 1.0  # the class must stay visible this long before the mirror fires
 GRACE_SEC = 0.5  # the class may flicker out for this long without losing the hold
@@ -36,9 +32,9 @@ DEFAULT_PROMPT = (
 # Everything the web UI shows and edits lives in this dictionary.
 state = {
     "prompt": DEFAULT_PROMPT,
-    "trigger": TRIGGER_CLASSES[0],  # the class that wakes the mirror
+    "trigger": "",  # the class that wakes the mirror, set from the model's classes
     "detected": {},  # what the model sees right now, as {"label": confidence, ...}
-    "labels": TRIGGER_CLASSES,  # the choices offered in the UI
+    "labels": [],  # the model's classes, offered in the UI
     "hold": 0.0,  # how far through the hold the trigger class is, from 0 to 1
     "status": "waiting",  # waiting | thinking | answered
     "answer": "",
@@ -57,6 +53,25 @@ seen_since = 0.0  # when the trigger class first appeared, 0 if it is not in vie
 last_seen = 0.0  # the last time the trigger class was in view
 other_since = 0.0  # when a class other than the trigger first appeared
 ready_at = 0.0  # triggers are ignored until this moment
+
+
+def load_labels():
+    """Read the model's own class list, which the brick learns from the runner.
+
+    The Edge Impulse runner announces the loaded model when the brick connects to it,
+    a second or two after startup, so this keeps looking until the list arrives.
+    """
+    if state["labels"]:
+        return
+
+    model_info = getattr(classifier, "_model_info", None)
+    labels = sorted(getattr(model_info, "labels", None) or [])
+    if not labels:
+        return
+
+    state["labels"] = labels
+    state["trigger"] = labels[0]
+    logger.info(f"Model classes: {', '.join(labels)}")
 
 
 def keep_latest_frame():
@@ -81,7 +96,7 @@ def on_classification(results: dict):
     now = time.monotonic()
     state["detected"] = results
 
-    # Also offer classes the model reports but that are missing from TRIGGER_CLASSES.
+    # Safety net: if the runner never announced its classes, collect them as they appear.
     for label in results:
         if label not in state["labels"]:
             state["labels"] = sorted(state["labels"] + [label])
@@ -196,4 +211,10 @@ ui.expose_api("GET", "/state", lambda: state)
 ui.expose_api("POST", "/settings", update_settings)
 ui.expose_api("GET", "/stream", mirror_stream)
 
-App.run(user_loop=keep_latest_frame)
+def loop():
+    """Runs over and over on the main thread while the app is alive."""
+    load_labels()
+    keep_latest_frame()
+
+
+App.run(user_loop=loop)

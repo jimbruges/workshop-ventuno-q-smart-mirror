@@ -38,7 +38,7 @@ async function refresh() {
   }
 
   statusText.textContent = {
-    waiting: `Waiting for "${state.trigger}"...`,
+    waiting: state.trigger ? `Waiting for "${state.trigger}"...` : 'Waiting for the model...',
     thinking: 'The mirror is looking at you...',
     answered: 'The mirror says:',
   }[state.status];
