@@ -9,6 +9,8 @@ prompt, and shows the answer beside the live mirror image.
 Everything you would want to change during a workshop is editable in the browser — no code,
 no restart, no save button.
 
+<img width="1498" height="809" alt="image" src="https://github.com/user-attachments/assets/ad802368-230e-4fd2-a2c3-997e5e848823" />
+
 ## Contents
 
 - [Hardware](#hardware)
@@ -92,23 +94,6 @@ board through App Lab, then copy from it over ADB.
 ./scripts/pull-models.sh          # one prepared board  ->  this computer
 ./scripts/provision.sh            # this computer  ->  every connected board
 ```
-
-| Script | What it does |
-| --- | --- |
-| `scripts/pull-models.sh [serial]` | Pulls both VLM model directories to `$VLM_MODELS_DIR`. Resumes cleanly: a model already present locally is skipped, and interrupted transfers land in a `.part` directory rather than being mistaken for complete. |
-| `scripts/provision.sh` | For every board in `adb devices`: pushes any missing model, then replaces the app directory. Models already on a board are skipped, so re-running costs almost nothing. |
-
-Worth knowing:
-
-- `$VLM_MODELS_DIR` defaults to `~/arduino-workshop-models` and must stay **outside** the app
-  folder — App Lab syncs the app folder to the board, and 11 GB of models should not go with it.
-- `provision.sh` **replaces** `/home/arduino/ArduinoApps/ai-smart-mirror` on each board. Local
-  edits made on a board are lost.
-- Only `app.yaml`, `README.md`, `python/`, `assets/`, `sketch/` and `scripts/` are pushed, so
-  the `.cache` venv and build output stay put.
-- Both scripts run as the `arduino` user, which owns both directories — no root needed.
-- Restart App Lab on each board afterwards so it notices the new models.
-
 ## How the code is put together
 
 ```
@@ -148,3 +133,21 @@ Worth knowing:
 - The VLM runs on its own thread so a multi-second generation never stalls classification.
 - `assets/app.js` polls `/state` ten times a second. No WebSocket and no JavaScript
   dependencies, so the whole frontend is about 70 lines.
+  
+| Script | What it does |
+| --- | --- |
+| `scripts/pull-models.sh [serial]` | Pulls both VLM model directories to `$VLM_MODELS_DIR`. Resumes cleanly: a model already present locally is skipped, and interrupted transfers land in a `.part` directory rather than being mistaken for complete. |
+| `scripts/provision.sh` | For every board in `adb devices`: pushes any missing model, then replaces the app directory. Models already on a board are skipped, so re-running costs almost nothing. |
+
+Worth knowing:
+
+- `$VLM_MODELS_DIR` defaults to `~/arduino-workshop-models` and must stay **outside** the app
+  folder — App Lab syncs the app folder to the board, and 11 GB of models should not go with it.
+- `provision.sh` **replaces** `/home/arduino/ArduinoApps/ai-smart-mirror` on each board. Local
+  edits made on a board are lost.
+- Only `app.yaml`, `README.md`, `python/`, `assets/`, `sketch/` and `scripts/` are pushed, so
+  the `.cache` venv and build output stay put.
+- Both scripts run as the `arduino` user, which owns both directories — no root needed.
+- Restart App Lab on each board afterwards so it notices the new models.
+
+
