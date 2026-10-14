@@ -64,13 +64,16 @@ function renderDetected(detected, trigger) {
     : '<li class="empty">Nothing detected</li>';
 }
 
-// Offer every class the model has reported so far as a possible trigger.
+// Offer every class the model has reported so far as a possible trigger. Compare the
+// names, not just how many there are, so a list that is replaced by the model's own
+// classes still refreshes the dropdown.
 function updateTriggers(labels, selected) {
-  if (labels.length === triggerSelect.options.length) return;
+  const shown = [...triggerSelect.options].map(option => option.value);
+  if (shown.join('\n') === labels.join('\n')) return;
 
   const current = triggerSelect.value || selected;
   triggerSelect.innerHTML = labels.map(label => `<option>${label}</option>`).join('');
-  triggerSelect.value = current;
+  triggerSelect.value = labels.includes(current) ? current : selected;
 }
 
 setInterval(refresh, 100);

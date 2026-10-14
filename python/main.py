@@ -24,6 +24,8 @@ HOLD_SEC = 1.0  # the class must stay visible this long before the mirror fires
 GRACE_SEC = 0.5  # the class may flicker out for this long without losing the hold
 COOLDOWN_SEC = 15  # pause between two mirror answers
 CLEAR_SEC = 0.5  # a different class held this long cancels the cooldown
+# Classes that mean "nothing interesting here", so the mirror does not start armed on them.
+IDLE_LABELS = ("background", "unknown")
 DEFAULT_PROMPT = (
     "You are a smart mirror. Look at the person in front of you, say one friendly "
     "sentence about what they are wearing and then give one short styling tip."
@@ -48,20 +50,28 @@ classifier = VideoImageClassification(camera=camera, confidence=CONFIDENCE, debo
 
 to_jpeg = compressed_to_jpeg()
 frame_lock = Lock()
+vlm_lock = Lock()  # the model server answers one request at a time
 latest_frame: bytes | None = None
 seen_since = 0.0  # when the trigger class first appeared, 0 if it is not in view
 last_seen = 0.0  # the last time the trigger class was in view
 other_since = 0.0  # when a class other than the trigger first appeared
 ready_at = 0.0  # triggers are ignored until this moment
+labels_loaded = False  # True once the model announced its own class list
+trigger_chosen = False  # True once the trigger was picked in the web UI
+warm_up_started = False  # True once the vision model has been given its throwaway question
 
 
 def load_labels():
     """Read the model's own class list, which the brick learns from the runner.
 
     The Edge Impulse runner announces the loaded model when the brick connects to it,
-    a second or two after startup, so this keeps looking until the list arrives.
+    a second or two after startup, so this keeps looking until the list arrives. The
+    announced list is the complete one, so it replaces any classes picked up from
+    detections in the meantime.
     """
-    if state["labels"]:
+    global labels_loaded
+
+    if labels_loaded:
         return
 
     model_info = getattr(classifier, "_model_info", None)
@@ -69,9 +79,25 @@ def load_labels():
     if not labels:
         return
 
+    labels_loaded = True
     state["labels"] = labels
-    state["trigger"] = labels[0]
+    # Keep the class the user picked, replace anything guessed from early detections.
+    if not trigger_chosen or state["trigger"] not in labels:
+        state["trigger"] = default_trigger(labels)
     logger.info(f"Model classes: {', '.join(labels)}")
+
+
+def default_trigger(labels: list[str]) -> str:
+    """Pick the class the mirror starts armed on.
+
+    Most classifiers have an idle class for "no subject in view", and starting on it
+    would fire the mirror at nothing, so the first real class wins when there is one.
+    """
+    for label in labels:
+        if label.strip().lower() not in IDLE_LABELS:
+            return label
+
+    return labels[0]
 
 
 def keep_latest_frame():
@@ -96,10 +122,14 @@ def on_classification(results: dict):
     now = time.monotonic()
     state["detected"] = results
 
-    # Safety net: if the runner never announced its classes, collect them as they appear.
-    for label in results:
-        if label not in state["labels"]:
-            state["labels"] = sorted(state["labels"] + [label])
+    # Safety net: if the runner never announced its classes, collect them as they appear
+    # and arm the mirror on the first one, so the app still works with such a model.
+    if not labels_loaded:
+        for label in results:
+            if label not in state["labels"]:
+                state["labels"] = sorted(state["labels"] + [label])
+        if not state["trigger"] and state["labels"]:
+            state["trigger"] = default_trigger(state["labels"])
 
     # Seeing a different class for CLEAR_SEC cuts the cooldown short, so stepping out
     # of view and back arms the mirror again without waiting for COOLDOWN_SEC.
@@ -157,12 +187,44 @@ def wake_mirror():
     Thread(target=answer, args=(frame,), daemon=True).start()
 
 
+def ask_mirror(prompt: str, frame: bytes) -> str:
+    """Put one frame and one prompt to the vision model, one request at a time."""
+    with vlm_lock:
+        return vlm.chat(message=prompt, images=[frame]).strip()
+
+
+def is_echo(reply: str, prompt: str) -> bool:
+    """True if the model handed the prompt back instead of describing the frame."""
+    head = prompt.strip()[:40].lower()
+    return bool(head) and reply.strip().lower().startswith(head)
+
+
+def warm_up(frame: bytes):
+    """Spend the model's cold first answer on a question nobody sees.
+
+    The local model server loads on its first request, which takes about fifteen
+    seconds, and it answers that first request with the prompt itself rather than a
+    description. Doing it at startup keeps both out of the mirror.
+    """
+    try:
+        ask_mirror("Reply with OK.", frame)
+        logger.info("The mirror is warmed up.")
+    except Exception as exc:
+        logger.warning(f"Could not warm up the mirror: {exc}")
+
+
 def answer(frame: bytes):
     global ready_at
 
     logger.info(f"Triggered by '{state['trigger']}', asking the mirror...")
+    prompt = state["prompt"]
     try:
-        state["answer"] = vlm.chat(message=state["prompt"], images=[frame]).strip()
+        reply = ask_mirror(prompt, frame)
+        if is_echo(reply, prompt):
+            # The model server does this on its very first request, so ask once more.
+            logger.warning("The mirror repeated the prompt, asking again...")
+            reply = ask_mirror(prompt, frame)
+        state["answer"] = reply
     except Exception as exc:
         logger.exception(f"The mirror could not answer: {exc}")
         state["answer"] = "The mirror could not answer. Please try again."
@@ -175,11 +237,13 @@ def answer(frame: bytes):
 
 def update_settings(settings: dict):
     """The web UI posts the trigger class and the prompt whenever they change."""
-    global seen_since
+    global seen_since, trigger_chosen
 
     state["prompt"] = settings.get("prompt", state["prompt"])
 
     trigger = settings.get("trigger", state["trigger"])
+    if trigger:
+        trigger_chosen = True
     if trigger != state["trigger"]:
         state["trigger"] = trigger
         state["status"] = "waiting"
@@ -211,10 +275,28 @@ ui.expose_api("GET", "/state", lambda: state)
 ui.expose_api("POST", "/settings", update_settings)
 ui.expose_api("GET", "/stream", mirror_stream)
 
+def start_warm_up():
+    """Warm the vision model up once, as soon as there is a frame to send it."""
+    global warm_up_started
+
+    if warm_up_started:
+        return
+
+    with frame_lock:
+        frame = latest_frame
+
+    if frame is None:
+        return
+
+    warm_up_started = True
+    Thread(target=warm_up, args=(frame,), daemon=True).start()
+
+
 def loop():
     """Runs over and over on the main thread while the app is alive."""
     load_labels()
     keep_latest_frame()
+    start_warm_up()
 
 
 App.run(user_loop=loop)

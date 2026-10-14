@@ -3,7 +3,7 @@ description: An image classification model triggers a smart mirror that describe
 ports: []
 bricks:
 - arduino:video_image_classification:
-    model: ei-model-1126214-20
+    model: ei-model-1126214-22
 - arduino:vlm:
     model: genie:qwen3_vl_4b_instruct
 - arduino:web_ui: {}
